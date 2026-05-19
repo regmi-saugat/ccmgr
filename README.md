@@ -8,7 +8,7 @@ A terminal UI to navigate, resume, and start [Claude Code](https://claude.com/cl
 pip install ccmgr
 ```
 
-Requires Python 3.12+ and `tmux` on `PATH`.
+Requires Python 3.10+ and `tmux` on `PATH`.
 
 ## Run
 

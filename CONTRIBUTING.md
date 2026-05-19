@@ -4,7 +4,7 @@ Thanks for your interest in ccmgr. Issues and pull requests are welcome.
 
 ## Dev setup
 
-ccmgr targets Python 3.12+ and requires `tmux` on `PATH`.
+ccmgr targets Python 3.10+ and requires `tmux` on `PATH`.
 
 ```bash
 git clone https://github.com/regmi-saugat/ccmgr
