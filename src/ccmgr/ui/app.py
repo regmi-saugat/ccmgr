@@ -192,6 +192,7 @@ class App:
         if ok and self._right_pane_id:
             self._active_claude_tmux = claude_tmux_name
             tmux_ctl.select_pane(self._right_pane_id)
+            self._swap_terminal_to_current_context()
         return ok
 
     def _current_terminal_context(self) -> tuple[str, Path] | None:
@@ -345,24 +346,64 @@ class App:
         except OSError as e:
             self._status.set_message(f"failed to open code: {e}")
 
-    def _open_terminal_for_active_project(self) -> None:
+    def _reveal_terminal(self) -> bool:
         import os
-        import shlex
-        proj = self._active_project()
-        if proj is None:
-            self._status.set_message("no project focused/selected")
-            return
-        shell = os.environ.get("SHELL", "/bin/bash")
-        cmd = f"cd {shlex.quote(str(proj.real_path))} && exec {shlex.quote(shell)}"
-        # Split visibly in the same window: if a right pane (claude) exists,
-        # put the terminal below it; otherwise split off the current pane.
+        ctx = self._current_terminal_context()
+        if ctx is None:
+            self._status.set_message("no session/project to open a terminal for")
+            return False
+        key, cwd = ctx
+        holder = terminal_holder.holder_name(key)
+        if not tmux_ctl.session_exists(holder):
+            shell = os.environ.get("SHELL", "/bin/bash")
+            if not tmux_ctl.new_detached_session(holder, terminal_holder.holder_shell_cmd(cwd, shell)):
+                self._status.set_message("failed to create terminal")
+                return False
+        self._terminal_holders[key] = holder
         target = self._right_pane_id if (self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id)) else None
-        new_pane = tmux_ctl.split_window_v(cmd, target=target)
-        if not new_pane:
+        pane = tmux_ctl.split_window_v(terminal_holder.attach_command(holder), target=target, size_percent=30)
+        if not pane:
             self._status.set_message("failed to split for terminal")
+            return False
+        self._terminal_pane_id = pane
+        self._terminal_visible = True
+        tmux_ctl.select_pane(pane)
+        self._status.set_message("terminal open  (t = collapse, T = maximize)")
+        return True
+
+    def _collapse_terminal(self) -> None:
+        if self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id):
+            tmux_ctl.kill_pane(self._terminal_pane_id)
+        self._terminal_pane_id = None
+        self._terminal_visible = False
+        if self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id):
+            tmux_ctl.select_pane(self._right_pane_id)
+
+    def _toggle_terminal(self) -> None:
+        # Reconcile if the pane was closed via raw tmux.
+        if self._terminal_visible and not (
+            self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id)
+        ):
+            self._terminal_visible = False
+            self._terminal_pane_id = None
+        if self._terminal_visible:
+            self._collapse_terminal()
+        else:
+            self._reveal_terminal()
+
+    def _swap_terminal_to_current_context(self) -> None:
+        if not self._terminal_visible:
             return
-        tmux_ctl.select_pane(new_pane)
-        self._status.set_message(f"terminal: {proj.display_name}  (Ctrl-B then arrow = move panes)")
+        if self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id):
+            tmux_ctl.kill_pane(self._terminal_pane_id)
+        self._terminal_pane_id = None
+        self._reveal_terminal()
+
+    def _maximize_terminal(self) -> None:
+        if not (self._terminal_visible and self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id)):
+            self._status.set_message("open the terminal first (t)")
+            return
+        tmux_ctl.resize_pane_zoom(self._terminal_pane_id)
 
     def _confirm_quit(self) -> None:
         self._close_modal()
@@ -408,8 +449,11 @@ class App:
         if key in ("c", "C"):
             self._open_editor_for_active_project()
             return
-        if key in ("t", "T"):
-            self._open_terminal_for_active_project()
+        if key == "t":
+            self._toggle_terminal()
+            return
+        if key == "T":
+            self._maximize_terminal()
             return
 
     def _rotate_focus(self, reverse: bool = False) -> None:
