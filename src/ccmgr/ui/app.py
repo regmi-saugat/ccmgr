@@ -346,7 +346,7 @@ class App:
         except OSError as e:
             self._status.set_message(f"failed to open code: {e}")
 
-    def _reveal_terminal(self) -> bool:
+    def _reveal_terminal(self, focus: bool = True) -> bool:
         import os
         ctx = self._current_terminal_context()
         if ctx is None:
@@ -367,7 +367,8 @@ class App:
             return False
         self._terminal_pane_id = pane
         self._terminal_visible = True
-        tmux_ctl.select_pane(pane)
+        if focus:
+            tmux_ctl.select_pane(pane)
         self._status.set_message("terminal open  (t = collapse, T = maximize)")
         return True
 
@@ -397,7 +398,8 @@ class App:
         if self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id):
             tmux_ctl.kill_pane(self._terminal_pane_id)
         self._terminal_pane_id = None
-        self._reveal_terminal()
+        self._terminal_visible = False
+        self._reveal_terminal(focus=False)
 
     def _maximize_terminal(self) -> None:
         if not (self._terminal_visible and self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id)):
