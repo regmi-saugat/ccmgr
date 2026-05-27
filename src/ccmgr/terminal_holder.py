@@ -14,9 +14,10 @@ from pathlib import Path
 def holder_name(key: str) -> str:
     """Stable detached-session name for a terminal bound to `key`.
 
-    Mirrors App._claude_session_name's `cc-<...>` convention with a `cct-` prefix.
+    Uses the same non-alphanumeric sanitization style as App._safe_name, with a
+    `cct-` prefix and the sanitized part capped at 24 chars.
     """
-    safe = "".join(c if c.isalnum() else "-" for c in key).strip("-") or "x"
+    safe = "".join(c if (c.isalnum() and c.isascii()) else "-" for c in key).strip("-") or "x"
     return f"cct-{safe[:24]}"
 
 

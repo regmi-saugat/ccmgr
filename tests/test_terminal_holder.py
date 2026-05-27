@@ -32,3 +32,11 @@ def test_holder_shell_cmd_cds_and_execs_shell():
 def test_holder_shell_cmd_quotes_paths_with_spaces():
     cmd = holder_shell_cmd(Path("/home/me/my proj"), "/bin/bash")
     assert cmd == "cd '/home/me/my proj' && exec /bin/bash"
+
+
+def test_attach_command_uses_exec():
+    assert " exec " in attach_command("cct-x")
+
+
+def test_holder_name_replaces_non_ascii():
+    assert holder_name("héllo") == "cct-h-llo"
