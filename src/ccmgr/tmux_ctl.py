@@ -160,19 +160,6 @@ def select_pane(pane_id: str) -> bool:
         return False
 
 
-def resize_pane_zoom(pane_id: str) -> bool:
-    """Toggle tmux zoom on `pane_id` (fills the window; call again to restore)."""
-    try:
-        subprocess.check_call(
-            ["tmux", "resize-pane", "-Z", "-t", pane_id],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
 def pane_alive(pane_id: str) -> bool:
     """True if the pane id still exists in any window."""
     if not in_tmux():

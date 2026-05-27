@@ -89,7 +89,6 @@ class HelpModal(urwid.WidgetWrap):
             ("i", "Popup with details of the focused project / session"),
             ("c", "Open the active project in VS Code (`code <path>`)"),
             ("t", "Toggle terminal for the current session/project (collapse/reopen, state kept)"),
-            ("T", "Maximize / restore the terminal"),
             ("?", "This help"),
             ("q", "Quit ccmgr (kills the right tmux pane + auto-launched session)"),
         ]),

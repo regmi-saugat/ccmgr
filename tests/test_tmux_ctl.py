@@ -34,23 +34,3 @@ def test_split_window_v_omits_size_when_none(monkeypatch):
     monkeypatch.setattr(subprocess, "check_output", fake_check_output)
     tmux_ctl.split_window_v("sh")
     assert "-l" not in captured["args"]
-
-
-def test_resize_pane_zoom_builds_command(monkeypatch):
-    captured = {}
-
-    def fake_check_call(args, **kwargs):
-        captured["args"] = args
-        return 0
-
-    monkeypatch.setattr(subprocess, "check_call", fake_check_call)
-    ok = tmux_ctl.resize_pane_zoom("%5")
-    assert ok is True
-    assert captured["args"] == ["tmux", "resize-pane", "-Z", "-t", "%5"]
-
-
-def test_resize_pane_zoom_returns_false_on_error(monkeypatch):
-    def boom(args, **kwargs):
-        raise subprocess.CalledProcessError(1, args)
-    monkeypatch.setattr(subprocess, "check_call", boom)
-    assert tmux_ctl.resize_pane_zoom("%5") is False

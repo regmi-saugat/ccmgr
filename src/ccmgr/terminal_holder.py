@@ -7,8 +7,8 @@ from pathlib import Path
 
 def holder_name(key: str) -> str:
     """Stable `cct-<sanitized>` session name for the terminal bound to `key`."""
-    safe = "".join(c if (c.isalnum() and c.isascii()) else "-" for c in key).strip("-") or "x"
-    return f"cct-{safe[:24]}"
+    safe = "".join(c if (c.isalnum() and c.isascii()) else "-" for c in key).strip("-")
+    return f"cct-{safe[:24].strip('-') or 'x'}"
 
 
 def attach_command(holder: str) -> str:

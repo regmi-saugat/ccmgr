@@ -369,7 +369,7 @@ class App:
         self._terminal_visible = True
         if focus:
             tmux_ctl.select_pane(pane)
-        self._status.set_message("terminal open  (t = collapse, T = maximize)")
+        self._status.set_message("terminal open  (t = collapse)")
         return True
 
     def _collapse_terminal(self) -> None:
@@ -400,12 +400,6 @@ class App:
         self._terminal_pane_id = None
         self._terminal_visible = False
         self._reveal_terminal(focus=False)
-
-    def _maximize_terminal(self) -> None:
-        if not (self._terminal_visible and self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id)):
-            self._status.set_message("open the terminal first (t)")
-            return
-        tmux_ctl.resize_pane_zoom(self._terminal_pane_id)
 
     def _confirm_quit(self) -> None:
         self._close_modal()
@@ -451,11 +445,8 @@ class App:
         if key in ("c", "C"):
             self._open_editor_for_active_project()
             return
-        if key == "t":
+        if key in ("t", "T"):
             self._toggle_terminal()
-            return
-        if key == "T":
-            self._maximize_terminal()
             return
 
     def _rotate_focus(self, reverse: bool = False) -> None:
