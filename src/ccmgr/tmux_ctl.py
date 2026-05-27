@@ -85,11 +85,13 @@ def split_window_h(cmd: str = "", target: str | None = None, size_percent: int |
         return None
 
 
-def split_window_v(cmd: str = "", target: str | None = None) -> str | None:
+def split_window_v(cmd: str = "", target: str | None = None, size_percent: int | None = None) -> str | None:
     """Create a vertical split (new pane below). Returns the new pane id."""
     if not in_tmux():
         return None
     args = ["tmux", "split-window", "-v", "-P", "-F", "#{pane_id}"]
+    if size_percent is not None:
+        args.extend(["-l", f"{size_percent}%"])
     if target:
         args.extend(["-t", target])
     if cmd:

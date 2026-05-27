@@ -11,6 +11,7 @@ from pathlib import Path
 
 import urwid
 
+from ccmgr import terminal_holder
 from ccmgr import tmux_ctl
 from ccmgr.config import Config
 from ccmgr.discovery import list_projects
@@ -66,6 +67,10 @@ class App:
         self._placeholders: dict[str, tuple[Path, float]] = {}
         # The right pane in ccmgr's window; runs `tmux attach -t <claude_session>`.
         self._right_pane_id: str | None = None
+        self._active_claude_tmux: str | None = None  # claude session shown in right pane
+        self._terminal_visible: bool = False
+        self._terminal_pane_id: str | None = None
+        self._terminal_holders: dict[str, str] = {}  # context key -> holder session name
         self._loop: urwid.MainLoop | None = None
         self._last_screen_size: tuple[int, int] | None = None
 
@@ -185,8 +190,20 @@ class App:
             tmux_ctl.set_window_option("pane-active-border-style", "fg=cyan,bold")
             ok = True
         if ok and self._right_pane_id:
+            self._active_claude_tmux = claude_tmux_name
             tmux_ctl.select_pane(self._right_pane_id)
+            self._swap_terminal_to_current_context()
         return ok
+
+    def _current_terminal_context(self) -> tuple[str, Path] | None:
+        """(holder_key, cwd) for the current terminal: active claude session, else focused project."""
+        name = self._active_claude_tmux
+        if name and tmux_ctl.pane_alive(self._right_pane_id or "") and name in self._running_projects:
+            return name, self._running_projects[name].real_path
+        proj = self._active_project()
+        if proj is not None:
+            return proj.encoded_name, proj.real_path
+        return None
 
     def _launch_resume(self, session_meta: SessionMeta) -> None:
         sid = session_meta.session_id
@@ -329,24 +346,60 @@ class App:
         except OSError as e:
             self._status.set_message(f"failed to open code: {e}")
 
-    def _open_terminal_for_active_project(self) -> None:
+    def _reveal_terminal(self, focus: bool = True) -> bool:
         import os
-        import shlex
-        proj = self._active_project()
-        if proj is None:
-            self._status.set_message("no project focused/selected")
-            return
-        shell = os.environ.get("SHELL", "/bin/bash")
-        cmd = f"cd {shlex.quote(str(proj.real_path))} && exec {shlex.quote(shell)}"
-        # Split visibly in the same window: if a right pane (claude) exists,
-        # put the terminal below it; otherwise split off the current pane.
+        ctx = self._current_terminal_context()
+        if ctx is None:
+            self._status.set_message("no session/project to open a terminal for")
+            return False
+        key, cwd = ctx
+        holder = terminal_holder.holder_name(key)
+        if not tmux_ctl.session_exists(holder):
+            shell = os.environ.get("SHELL", "/bin/bash")
+            if not tmux_ctl.new_detached_session(holder, terminal_holder.holder_shell_cmd(cwd, shell)):
+                self._status.set_message("failed to create terminal")
+                return False
+        self._terminal_holders[key] = holder
         target = self._right_pane_id if (self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id)) else None
-        new_pane = tmux_ctl.split_window_v(cmd, target=target)
-        if not new_pane:
+        pane = tmux_ctl.split_window_v(terminal_holder.attach_command(holder), target=target, size_percent=30)
+        if not pane:
             self._status.set_message("failed to split for terminal")
+            return False
+        self._terminal_pane_id = pane
+        self._terminal_visible = True
+        if focus:
+            tmux_ctl.select_pane(pane)
+        self._status.set_message("terminal open  (t = collapse)")
+        return True
+
+    def _collapse_terminal(self) -> None:
+        if self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id):
+            tmux_ctl.kill_pane(self._terminal_pane_id)
+        self._terminal_pane_id = None
+        self._terminal_visible = False
+        if self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id):
+            tmux_ctl.select_pane(self._right_pane_id)
+
+    def _toggle_terminal(self) -> None:
+        # Reconcile if the pane was closed via raw tmux.
+        if self._terminal_visible and not (
+            self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id)
+        ):
+            self._terminal_visible = False
+            self._terminal_pane_id = None
+        if self._terminal_visible:
+            self._collapse_terminal()
+        else:
+            self._reveal_terminal()
+
+    def _swap_terminal_to_current_context(self) -> None:
+        if not self._terminal_visible:
             return
-        tmux_ctl.select_pane(new_pane)
-        self._status.set_message(f"terminal: {proj.display_name}  (Ctrl-B then arrow = move panes)")
+        if self._terminal_pane_id and tmux_ctl.pane_alive(self._terminal_pane_id):
+            tmux_ctl.kill_pane(self._terminal_pane_id)
+        self._terminal_pane_id = None
+        self._terminal_visible = False
+        self._reveal_terminal(focus=False)
 
     def _confirm_quit(self) -> None:
         self._close_modal()
@@ -393,7 +446,7 @@ class App:
             self._open_editor_for_active_project()
             return
         if key in ("t", "T"):
-            self._open_terminal_for_active_project()
+            self._toggle_terminal()
             return
 
     def _rotate_focus(self, reverse: bool = False) -> None:
@@ -410,6 +463,18 @@ class App:
 
     def _teardown_tmux(self) -> None:
         """Clean up on quit: kill right pane, every detached claude session, and our own session if we own it."""
+        if self._terminal_pane_id:
+            try:
+                tmux_ctl.kill_pane(self._terminal_pane_id)
+            except Exception:
+                pass
+            self._terminal_pane_id = None
+        for holder in list(self._terminal_holders.values()):
+            try:
+                tmux_ctl.kill_session(holder)
+            except Exception:
+                pass
+        self._terminal_holders.clear()
         if self._right_pane_id:
             try:
                 tmux_ctl.kill_pane(self._right_pane_id)
@@ -476,6 +541,13 @@ class App:
                 self._running_labels.pop(tmux_name, None)
                 self._running_projects.pop(tmux_name, None)
                 self._placeholders.pop(sid, None)
+                holder = self._terminal_holders.pop(tmux_name, None)
+                if holder:
+                    tmux_ctl.kill_session(holder)
+                    if self._active_claude_tmux == tmux_name and self._terminal_visible:
+                        self._collapse_terminal()
+                if self._active_claude_tmux == tmux_name:
+                    self._active_claude_tmux = None
 
         # Promote any `__new__-N` placeholders to their real session_id +
         # display title once claude has written the jsonl on disk.
