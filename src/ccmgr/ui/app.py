@@ -11,6 +11,7 @@ from pathlib import Path
 
 import urwid
 
+from ccmgr import terminal_holder
 from ccmgr import tmux_ctl
 from ccmgr.config import Config
 from ccmgr.discovery import list_projects
@@ -66,6 +67,10 @@ class App:
         self._placeholders: dict[str, tuple[Path, float]] = {}
         # The right pane in ccmgr's window; runs `tmux attach -t <claude_session>`.
         self._right_pane_id: str | None = None
+        self._active_claude_tmux: str | None = None  # claude session shown in right pane
+        self._terminal_visible: bool = False
+        self._terminal_pane_id: str | None = None
+        self._terminal_holders: dict[str, str] = {}  # context key -> holder session name
         self._loop: urwid.MainLoop | None = None
         self._last_screen_size: tuple[int, int] | None = None
 
@@ -185,8 +190,19 @@ class App:
             tmux_ctl.set_window_option("pane-active-border-style", "fg=cyan,bold")
             ok = True
         if ok and self._right_pane_id:
+            self._active_claude_tmux = claude_tmux_name
             tmux_ctl.select_pane(self._right_pane_id)
         return ok
+
+    def _current_terminal_context(self) -> tuple[str, Path] | None:
+        """(holder_key, cwd) for the current terminal: active claude session, else focused project."""
+        name = self._active_claude_tmux
+        if name and tmux_ctl.pane_alive(self._right_pane_id or "") and name in self._running_projects:
+            return name, self._running_projects[name].real_path
+        proj = self._active_project()
+        if proj is not None:
+            return proj.encoded_name, proj.real_path
+        return None
 
     def _launch_resume(self, session_meta: SessionMeta) -> None:
         sid = session_meta.session_id
