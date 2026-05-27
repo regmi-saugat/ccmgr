@@ -472,6 +472,18 @@ class App:
 
     def _teardown_tmux(self) -> None:
         """Clean up on quit: kill right pane, every detached claude session, and our own session if we own it."""
+        if self._terminal_pane_id:
+            try:
+                tmux_ctl.kill_pane(self._terminal_pane_id)
+            except Exception:
+                pass
+            self._terminal_pane_id = None
+        for holder in list(self._terminal_holders.values()):
+            try:
+                tmux_ctl.kill_session(holder)
+            except Exception:
+                pass
+        self._terminal_holders.clear()
         if self._right_pane_id:
             try:
                 tmux_ctl.kill_pane(self._right_pane_id)
@@ -538,6 +550,13 @@ class App:
                 self._running_labels.pop(tmux_name, None)
                 self._running_projects.pop(tmux_name, None)
                 self._placeholders.pop(sid, None)
+                holder = self._terminal_holders.pop(tmux_name, None)
+                if holder:
+                    tmux_ctl.kill_session(holder)
+                    if self._active_claude_tmux == tmux_name and self._terminal_visible:
+                        self._collapse_terminal()
+                if self._active_claude_tmux == tmux_name:
+                    self._active_claude_tmux = None
 
         # Promote any `__new__-N` placeholders to their real session_id +
         # display title once claude has written the jsonl on disk.
