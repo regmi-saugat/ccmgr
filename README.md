@@ -28,6 +28,8 @@ If you're not already inside a tmux session, ccmgr will launch one automatically
 | `Ctrl-B` then `←` | Move focus back to ccmgr from the right pane |
 | `Ctrl-B` then `→` | Move focus to the claude pane |
 | `/` | Filter the focused pane |
+| `h` | Hide the focused project (persists in `config.toml`) |
+| `H` | View hidden projects; Enter on a row unhides |
 | `i` | Popup with the focused session's details (title, project, msgs, tokens) |
 | `?` | Full help popup |
 | `q` or `Ctrl-C` | Quit (kills the right tmux pane + auto-launched tmux session) |

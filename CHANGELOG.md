@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Hide/show projects (`h` / `H`): persistently hide selected projects from the Projects, Sessions, and Running panes. The hidden set is stored under `[projects]` in `config.toml` (written with comments preserved); the master switch `hide_enabled` auto-enables on first hide and can be set back to `false` by hand to temporarily show everything. Hiding is display-only — detached claude sessions in hidden projects keep running and reappear on unhide.
+
 ## [0.1.5] - 2026-05-22
 
 ### Added
