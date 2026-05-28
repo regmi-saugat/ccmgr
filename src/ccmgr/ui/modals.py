@@ -88,6 +88,8 @@ class HelpModal(urwid.WidgetWrap):
             ("/", "Filter the focused pane; Enter or Esc exits filter mode"),
             ("i", "Popup with details of the focused project / session"),
             ("c", "Open the active project in VS Code (`code <path>`)"),
+            ("h", "Hide the focused project (writes config.toml)"),
+            ("H", "View hidden projects; Enter unhides"),
             ("t", "Open a terminal in the active project (new tmux window)"),
             ("?", "This help"),
             ("q", "Quit ccmgr (kills the right tmux pane + auto-launched session)"),
@@ -193,5 +195,63 @@ class NewProjectModal(urwid.WidgetWrap):
             return None
         if key == "esc":
             self._on_cancel()
+            return None
+        return super().keypress(size, key)
+
+
+class _HiddenRow(urwid.WidgetWrap):
+    def __init__(self, real_path: str, display_name: str | None) -> None:
+        self.real_path = real_path
+        if display_name:
+            text = urwid.Columns([
+                ("pack", urwid.Text(f"{display_name}  ")),
+                urwid.Text(("dim", real_path), align="left"),
+            ], dividechars=0)
+        else:
+            text = urwid.Text(("dim", f"(missing)  {real_path}"))
+        super().__init__(urwid.AttrMap(text, None, focus_map="focus"))
+
+    def selectable(self) -> bool:
+        return True
+
+    def keypress(self, size, key):
+        return key
+
+
+class HiddenProjectsModal(urwid.WidgetWrap):
+    """Lists hidden projects; Enter unhides the focused row, Esc closes."""
+
+    def __init__(
+        self,
+        entries: list[tuple[str, str | None]],
+        on_unhide: Callable[[str], None],
+        on_close: Callable[[], None],
+    ) -> None:
+        self._on_unhide = on_unhide
+        self._on_close = on_close
+        self._walker: urwid.SimpleFocusListWalker | None = None
+        if not entries:
+            body = urwid.Filler(urwid.Text("  (no hidden projects)", align="left"), valign="top")
+        else:
+            self._walker = urwid.SimpleFocusListWalker(
+                [_HiddenRow(real_path, display) for real_path, display in entries]
+            )
+            body = urwid.ListBox(self._walker)
+        footer = urwid.Text(("dim", "Enter = unhide · Esc = close"), align="left")
+        pile = urwid.Pile([("weight", 1, body), ("pack", footer)])
+        super().__init__(urwid.LineBox(pile, title="Hidden projects"))
+
+    def selectable(self) -> bool:
+        return True
+
+    def keypress(self, size, key):
+        if key == "esc":
+            self._on_close()
+            return None
+        if key == "enter":
+            if self._walker:
+                focus_w, _ = self._walker.get_focus()
+                if isinstance(focus_w, _HiddenRow):
+                    self._on_unhide(focus_w.real_path)
             return None
         return super().keypress(size, key)
