@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
   "urwid>=2.6",
+  "tomlkit>=0.13",
 ]
 
 [project.optional-dependencies]
