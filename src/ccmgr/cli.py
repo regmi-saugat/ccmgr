@@ -32,10 +32,17 @@ def main(argv: list[str] | None = None) -> int:
         # unreachable
 
     # Inside tmux now.
-    config = load_config()
+    from ccmgr.config import default_config_path
+    config_path = default_config_path()
+    config = load_config(config_path)
     # Lazy import so non-TUI invocations (--version etc) don't pull urwid.
     from ccmgr.ui.app import App
-    app = App(claude_home=Path(args.claude_home), config=config, auto_launched=args.inside_tmux)
+    app = App(
+        claude_home=Path(args.claude_home),
+        config=config,
+        config_path=config_path,
+        auto_launched=args.inside_tmux,
+    )
     app.run()
     return 0
 
