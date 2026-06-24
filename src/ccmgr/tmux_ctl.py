@@ -126,6 +126,64 @@ def kill_pane(pane_id: str) -> bool:
         return False
 
 
+def build_scroll_options(target: str, scrollback_lines: int) -> list[list[str]]:
+    """tmux option commands that let the claude pane be scrolled and copied
+    without the live stream dragging a selection away.
+
+    `mouse on` lets the user drag-select / wheel-scroll, `mode-keys vi` gives
+    vi navigation in copy-mode, and `history-limit` gives copy-mode a buffer to
+    scroll back over. The actual "freeze so my selection stops auto-scrolling"
+    is `build_copy_mode_command`, triggered by a ccmgr hotkey on the pane.
+
+    Returns a list of arg lists (the bits after `tmux`) so the construction is
+    unit-testable; `apply_scroll_options` shells them out.
+    """
+    return [
+        ["set-option", "-t", target, "mouse", "on"],
+        ["set-window-option", "-t", target, "mode-keys", "vi"],
+        ["set-option", "-t", target, "history-limit", str(scrollback_lines)],
+    ]
+
+
+def apply_scroll_options(target: str, scrollback_lines: int) -> bool:
+    """Apply `build_scroll_options` to `target`. Best-effort: a tmux build that
+    rejects one option still gets the rest. Returns True only if all applied."""
+    ok = True
+    for args in build_scroll_options(target, scrollback_lines):
+        try:
+            subprocess.check_call(
+                ["tmux", *args],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            ok = False
+    return ok
+
+
+def build_copy_mode_command(pane_id: str) -> list[str]:
+    """tmux args (after `tmux`) that put `pane_id` into copy-mode.
+
+    copy-mode freezes the pane: new streaming output buffers behind the view
+    instead of scrolling it, so a drag-selection stays put. `-e` exits
+    automatically when the user scrolls back down to the bottom.
+    """
+    return ["copy-mode", "-e", "-t", pane_id]
+
+
+def enter_copy_mode(pane_id: str) -> bool:
+    """Put `pane_id` into copy-mode (see `build_copy_mode_command`)."""
+    try:
+        subprocess.check_call(
+            ["tmux", *build_copy_mode_command(pane_id)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
 def set_window_option(name: str, value: str) -> bool:
     """`tmux set-window-option -w <name> <value>` scoped to the current window.
 

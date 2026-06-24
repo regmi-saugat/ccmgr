@@ -91,6 +91,8 @@ class HelpModal(urwid.WidgetWrap):
             ("h", "Hide the focused project (writes config.toml)"),
             ("H", "View hidden projects; Enter unhides"),
             ("t", "Open a terminal in the active project (new tmux window)"),
+            ("s", "Freeze the claude pane in copy-mode so you can select"),
+            ("", "text without the live stream scrolling it away"),
             ("?", "This help"),
             ("q", "Quit ccmgr (kills the right tmux pane + auto-launched session)"),
         ]),

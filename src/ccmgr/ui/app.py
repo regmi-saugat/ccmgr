@@ -161,7 +161,13 @@ class App:
         """Create the detached tmux session running claude, if it doesn't already exist."""
         if tmux_ctl.session_exists(name):
             return True
-        return tmux_ctl.new_detached_session(name, shell_cmd)
+        if not tmux_ctl.new_detached_session(name, shell_cmd):
+            return False
+        # Make the claude pane scroll/copy sanely: wheel enters tmux copy-mode
+        # instead of being fed to the alt-screen TUI (which made scrolling jumpy
+        # and snapped any selection back to the bottom on new output).
+        tmux_ctl.apply_scroll_options(name, self._config.scrollback_lines)
+        return True
 
     def _attach_in_right_pane(self, claude_tmux_name: str) -> bool:
         """Make the right pane display the named claude tmux session.
@@ -194,6 +200,19 @@ class App:
             self._active_claude_tmux = claude_tmux_name
             tmux_ctl.select_pane(self._right_pane_id)
         return ok
+
+    def _freeze_claude_pane_for_copy(self) -> None:
+        """Drop the claude pane into tmux copy-mode so a drag-selection stops
+        getting scrolled away by new streaming output. Focus moves to the pane;
+        the user selects/copies there and scrolls back to the bottom to exit."""
+        if not (self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id)):
+            self._status.set_message("no claude pane to scroll")
+            return
+        tmux_ctl.select_pane(self._right_pane_id)
+        if tmux_ctl.enter_copy_mode(self._right_pane_id):
+            self._status.set_message("claude pane frozen — select to copy, scroll to bottom to exit")
+        else:
+            self._status.set_message("couldn't enter copy-mode")
 
     def _launch_resume(self, session_meta: SessionMeta) -> None:
         sid = session_meta.session_id
@@ -407,6 +426,9 @@ class App:
             return
         if key == "H":
             self._open_hidden_modal()
+            return
+        if key in ("s", "S"):
+            self._freeze_claude_pane_for_copy()
             return
 
     def _rotate_focus(self, reverse: bool = False) -> None:
