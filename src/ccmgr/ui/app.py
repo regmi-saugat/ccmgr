@@ -11,14 +11,14 @@ from pathlib import Path
 
 import urwid
 
-from ccmgr import terminal_holder
-from ccmgr import tmux_ctl
-from ccmgr.config import Config
+from ccmgr import config_store, terminal_holder, tmux_ctl
+from ccmgr.config import Config, load_config
 from ccmgr.discovery import list_projects
+from ccmgr.project_filter import visible_projects
 from ccmgr.launcher import build_resume_command, build_new_session_command
 from ccmgr.models import Project, SessionMeta
 from ccmgr.session_cache import SessionCache
-from ccmgr.ui.modals import HelpModal, NewProjectModal, ProjectInfoModal, QuitConfirmModal, SessionInfoModal
+from ccmgr.ui.modals import HelpModal, HiddenProjectsModal, NewProjectModal, ProjectInfoModal, QuitConfirmModal, SessionInfoModal
 from ccmgr.ui.projects_pane import ProjectsPane
 from ccmgr.ui.running_pane import RunningEntry, RunningSessionsPane
 from ccmgr.ui.sessions_pane import SessionsPane
@@ -45,9 +45,13 @@ PALETTE = [
 
 
 class App:
-    def __init__(self, claude_home: Path, config: Config, auto_launched: bool = False) -> None:
+    def __init__(self, claude_home: Path, config: Config, config_path: Path, auto_launched: bool = False) -> None:
         self._claude_home = claude_home
         self._config = config
+        self._config_path = config_path
+        self._config_mtime: float | None = None
+        self._hide_enabled: bool = config.hide_enabled
+        self._hidden_projects: frozenset[str] = config.hidden_projects
         self._auto_launched = auto_launched
         self._status = StatusBar()
         self._selected_project: Project | None = None
@@ -67,7 +71,7 @@ class App:
         self._placeholders: dict[str, tuple[Path, float]] = {}
         # The right pane in ccmgr's window; runs `tmux attach -t <claude_session>`.
         self._right_pane_id: str | None = None
-        self._active_claude_tmux: str | None = None  # claude session shown in right pane
+        self._active_claude_tmux: str | None = None  # claude session currently shown in right pane
         self._terminal_visible: bool = False
         self._terminal_pane_id: str | None = None
         self._terminal_holders: dict[str, str] = {}  # context key -> holder session name
@@ -160,7 +164,13 @@ class App:
         """Create the detached tmux session running claude, if it doesn't already exist."""
         if tmux_ctl.session_exists(name):
             return True
-        return tmux_ctl.new_detached_session(name, shell_cmd)
+        if not tmux_ctl.new_detached_session(name, shell_cmd):
+            return False
+        # Make the claude pane scroll/copy sanely: wheel enters tmux copy-mode
+        # instead of being fed to the alt-screen TUI (which made scrolling jumpy
+        # and snapped any selection back to the bottom on new output).
+        tmux_ctl.apply_scroll_options(name, self._config.scrollback_lines)
+        return True
 
     def _attach_in_right_pane(self, claude_tmux_name: str) -> bool:
         """Make the right pane display the named claude tmux session.
@@ -194,6 +204,19 @@ class App:
             tmux_ctl.select_pane(self._right_pane_id)
             self._swap_terminal_to_current_context()
         return ok
+
+    def _freeze_claude_pane_for_copy(self) -> None:
+        """Drop the claude pane into tmux copy-mode so a drag-selection stops
+        getting scrolled away by new streaming output. Focus moves to the pane;
+        the user selects/copies there and scrolls back to the bottom to exit."""
+        if not (self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id)):
+            self._status.set_message("no claude pane to scroll")
+            return
+        tmux_ctl.select_pane(self._right_pane_id)
+        if tmux_ctl.enter_copy_mode(self._right_pane_id):
+            self._status.set_message("claude pane frozen — select to copy, scroll to bottom to exit")
+        else:
+            self._status.set_message("couldn't enter copy-mode")
 
     def _current_terminal_context(self) -> tuple[str, Path] | None:
         """(holder_key, cwd) for the current terminal: active claude session, else focused project."""
@@ -448,6 +471,15 @@ class App:
         if key in ("t", "T"):
             self._toggle_terminal()
             return
+        if key == "h":
+            self._hide_focused_project()
+            return
+        if key == "H":
+            self._open_hidden_modal()
+            return
+        if key in ("s", "S"):
+            self._freeze_claude_pane_for_copy()
+            return
 
     def _rotate_focus(self, reverse: bool = False) -> None:
         """Tab / Shift-Tab cycle through the three ccmgr sidebar panes.
@@ -529,10 +561,89 @@ class App:
             return original_keypress(size, key)
         edit.keypress = new_keypress
 
+    # --- hide/show state ---
+
+    def _reload_hide_state_if_changed(self) -> None:
+        try:
+            mtime = self._config_path.stat().st_mtime
+        except OSError:
+            return
+        if self._config_mtime == mtime:
+            return
+        self._config_mtime = mtime
+        try:
+            cfg = load_config(self._config_path)
+        except Exception:
+            return  # leave current state on parse error
+        self._hide_enabled = cfg.hide_enabled
+        self._hidden_projects = cfg.hidden_projects
+
+    def _clear_right_pane_if_hidden(self) -> None:
+        name = self._active_claude_tmux
+        if not name or not self._hide_enabled:
+            return
+        proj = self._running_projects.get(name)
+        if proj is None:
+            return
+        from ccmgr.project_filter import _canon
+        hidden_canon = {_canon(h) for h in self._hidden_projects}
+        if _canon(proj.real_path) in hidden_canon:
+            if self._right_pane_id and tmux_ctl.pane_alive(self._right_pane_id):
+                tmux_ctl.kill_pane(self._right_pane_id)
+            self._right_pane_id = None
+            self._active_claude_tmux = None
+
+    def _hide_focused_project(self) -> None:
+        if self._sidebar.focus_position != 0:
+            return  # 'h' only acts when Projects pane is focused
+        proj = self._projects_pane.focused_project()
+        if proj is None:
+            self._status.set_message("focus a project to hide it")
+            return
+        try:
+            config_store.set_hidden(self._config_path, str(proj.real_path), True)
+        except Exception as e:
+            self._status.set_message(f"failed to hide: {e}")
+            return
+        self._config_mtime = None
+        self._reload_hide_state_if_changed()
+        self._clear_right_pane_if_hidden()
+        self._refresh()
+        self._status.set_message(f"hidden: {proj.display_name}  (H to view)")
+
+    def _open_hidden_modal(self) -> None:
+        from ccmgr.project_filter import _canon
+        all_projects = list_projects(self._claude_home)
+        by_canon: dict[str, Project] = {_canon(p.real_path): p for p in all_projects}
+        entries: list[tuple[str, str | None]] = []
+        for stored in self._hidden_projects:
+            proj = by_canon.get(_canon(stored))
+            entries.append((stored, proj.display_name if proj else None))
+        modal = HiddenProjectsModal(
+            entries=entries,
+            on_unhide=self._on_modal_unhide,
+            on_close=self._close_modal,
+        )
+        self._show_overlay(modal, width=70, height=60)
+
+    def _on_modal_unhide(self, real_path: str) -> None:
+        try:
+            config_store.set_hidden(self._config_path, real_path, False)
+        except Exception as e:
+            self._status.set_message(f"failed to unhide: {e}")
+            return
+        self._config_mtime = None
+        self._reload_hide_state_if_changed()
+        self._close_modal()
+        self._refresh()
+        self._status.set_message(f"unhidden: {real_path}")
+
     # --- periodic refresh ---
 
     def _refresh(self) -> None:
-        projects = list_projects(self._claude_home)
+        self._reload_hide_state_if_changed()
+        all_projects = list_projects(self._claude_home)
+        projects = visible_projects(all_projects, self._hidden_projects, self._hide_enabled)
         self._projects_pane.set_projects(projects)
         # Prune dead claude tmux sessions (e.g. claude exited via /quit).
         for sid in list(self._claude_tmux_sessions.keys()):
@@ -564,9 +675,12 @@ class App:
                 self._sessions_pane.set_sessions(None, [], running_ids=running_ids)
 
         # Populate the bottom "Running" pane.
+        visible_encoded = {p.encoded_name for p in projects}
         entries = [
             RunningEntry(tmux_name=name, label=self._running_labels.get(name, name))
             for name in self._claude_tmux_sessions.values()
+            if (proj := self._running_projects.get(name)) is None
+            or proj.encoded_name in visible_encoded
         ]
         self._running_pane.set_running(entries)
 

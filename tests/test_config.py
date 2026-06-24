@@ -39,3 +39,29 @@ def test_load_full_override(tmp_path):
     assert cfg.claude_binary == "/usr/local/bin/claude"
     assert cfg.poll_interval_ms == 2000
     assert cfg.live_badge_seconds == 30
+
+
+def test_load_config_reads_projects_section(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[projects]\n'
+        'hide_enabled = true\n'
+        'hidden = ["/home/me/a", "/home/me/b"]\n'
+    )
+    c = load_config(cfg)
+    assert c.hide_enabled is True
+    assert c.hidden_projects == frozenset({"/home/me/a", "/home/me/b"})
+
+
+def test_load_config_projects_defaults_when_absent(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[claude]\nbinary = 'claude'\n")
+    c = load_config(cfg)
+    assert c.hide_enabled is False
+    assert c.hidden_projects == frozenset()
+
+
+def test_default_config_has_hide_disabled():
+    c = Config()
+    assert c.hide_enabled is False
+    assert c.hidden_projects == frozenset()

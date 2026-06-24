@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -16,6 +16,8 @@ class Config:
     claude_binary: str = "claude"
     poll_interval_ms: int = 1000
     live_badge_seconds: int = 3
+    hide_enabled: bool = False
+    hidden_projects: frozenset[str] = field(default_factory=frozenset)
 
 
 def default_config_path() -> Path:
@@ -35,6 +37,7 @@ def load_config(config_path: Path | None = None) -> Config:
     limits = data.get("limits", {})
     claude = data.get("claude", {})
     live = data.get("live", {})
+    projects = data.get("projects", {})
 
     return Config(
         leave_focus_key=keys.get("leave_focus", "ctrl a"),
@@ -45,4 +48,6 @@ def load_config(config_path: Path | None = None) -> Config:
         claude_binary=claude.get("binary", "claude"),
         poll_interval_ms=int(live.get("poll_interval_ms", 1000)),
         live_badge_seconds=int(live.get("live_badge_seconds", 3)),
+        hide_enabled=bool(projects.get("hide_enabled", False)),
+        hidden_projects=frozenset(str(p) for p in projects.get("hidden", []) or []),
     )

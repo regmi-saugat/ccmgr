@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hide/show projects (`h` / `H`): persistently hide selected projects from the Projects, Sessions, and Running panes. The hidden set is stored under `[projects]` in `config.toml` (written with comments preserved); the master switch `hide_enabled` auto-enables on first hide and can be set back to `false` by hand to temporarily show everything. Hiding is display-only — detached claude sessions in hidden projects keep running and reappear on unhide.
 - Collapsible terminal (`t`): toggle a terminal for the current session/project. Its shell lives in a detached tmux session (`cct-<key>`), so collapsing hides the pane while the shell keeps running — reopening restores full scrollback and any in-progress command. One terminal per context, created lazily, cleaned up when the session closes or on quit.
+- Freeze claude pane for copy (`s`): drop the claude pane into tmux copy-mode so a drag-selection stops getting scrolled away by new streaming output; scroll back to the bottom to exit. Each claude session also gets `mouse`, `mode-keys vi`, and `history-limit` (wired from `scrollback_lines`) applied at creation.
 
 ## [0.1.5] - 2026-05-22
 

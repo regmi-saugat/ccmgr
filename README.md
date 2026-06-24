@@ -30,6 +30,8 @@ If you're not already inside a tmux session, ccmgr will launch one automatically
 | `c` | Open the active project in VS Code (`code <path>`) |
 | `t` | Toggle a terminal for the current session/project — collapse it and reopen later with its shell, scrollback, and running command intact |
 | `/` | Filter the focused pane |
+| `h` | Hide the focused project (persists in `config.toml`) |
+| `H` | View hidden projects; Enter on a row unhides |
 | `i` | Popup with the focused session's details (title, project, msgs, tokens) |
 | `?` | Full help popup |
 | `q` or `Ctrl-C` | Quit (kills the right tmux pane + auto-launched tmux session) |
