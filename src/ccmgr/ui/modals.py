@@ -90,7 +90,7 @@ class HelpModal(urwid.WidgetWrap):
             ("c", "Open the active project in VS Code (`code <path>`)"),
             ("h", "Hide the focused project (writes config.toml)"),
             ("H", "View hidden projects; Enter unhides"),
-            ("t", "Open a terminal in the active project (new tmux window)"),
+            ("t", "Toggle terminal for the current session/project (collapse/reopen, state kept)"),
             ("s", "Freeze the claude pane in copy-mode so you can select"),
             ("", "text without the live stream scrolling it away"),
             ("?", "This help"),
