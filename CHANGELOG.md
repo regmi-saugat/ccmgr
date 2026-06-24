@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Collapsible terminal (`t`): toggle a terminal for the current session/project. Its shell lives in a detached tmux session (`cct-<key>`), so collapsing hides the pane while the shell keeps running — reopening restores full scrollback and any in-progress command. One terminal per context, created lazily, cleaned up when the session closes or on quit.
+
 ## [0.1.5] - 2026-05-22
 
 ### Added
